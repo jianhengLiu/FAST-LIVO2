@@ -1,5 +1,5 @@
 common:
-  img_topic: "/left_camera/image"
+  img_topic: "/camera/right/image"
   lid_topic: "/livox/lidar"
   imu_topic: "/livox/imu"
   img_en: 1
@@ -7,14 +7,16 @@ common:
   ros_driver_bug_fix: false
 
 extrin_calib:
-  extrinsic_T: [0.04165, 0.02326, -0.0284]
+  extrinsic_T: [0, 0, 0]
+  # R_I^L
   extrinsic_R: [1, 0, 0, 0, 1, 0, 0, 0, 1]
-  Rcl: [0.00610193,-0.999863,-0.0154172,
-        -0.00615449,0.0153796,-0.999863,
-        0.999962,0.00619598,-0.0060598] 
-  Pcl: [0.0194384, 0.104689,-0.0251952]
+  # R_C^L
+  Rcl: [-0.78682, -0.41620, -0.45573,
+        0.50295, -0.00442, -0.86430,
+        0.35771, -0.90926, 0.21281]
+  Pcl: [-0.09886,0.04385,0.02253]
 
-time_offset: 
+time_offset:
   imu_time_offset: 0.0
   img_time_offset: 0.1
   exposure_time_init: 0.0
@@ -23,13 +25,13 @@ preprocess:
   point_filter_num: 1
   filter_size_surf: 0.1
   lidar_type: 1 # Livox Avia LiDAR
-  scan_line: 6
-  blind: 0.8
+  scan_line: 4
+  blind: 0.5
 
 vio:
   max_iterations: 5
   outlier_threshold: 1000 # 78 100 156 #100 200 500 700 infinite
-  img_point_cov: 100 # 100 1000 
+  img_point_cov: 100 # 100 1000
   patch_size: 8
   patch_pyrimid_level: 4
   normal_en: true
@@ -41,16 +43,16 @@ vio:
 imu:
   imu_en: true
   imu_int_frame: 30
-  acc_cov: 0.5 # 0.2
-  gyr_cov: 0.3 # 0.5
-  b_acc_cov: 0.0001 # 0.1
-  b_gyr_cov: 0.0001 # 0.1
+  acc_cov: 0.8 # 0.2
+  gyr_cov: 0.5 # 0.5
+  b_acc_cov: 0.001 # 0.1
+  b_gyr_cov: 0.001 # 0.1
 
 lio:
   max_iterations: 5
   dept_err: 0.02
-  beam_err: 0.05
-  min_eigen_value: 0.0025 # 0.005
+  beam_err: 0.15
+  min_eigen_value: 0.005 # 0.005
   voxel_size: 0.5
   max_layer: 2
   max_points_num: 50
@@ -81,5 +83,4 @@ pcd_save:
   colmap_output_en: false # need to set interval = -1
   filter_size_pcd: 0.15
   interval: -1 
-  # how many LiDAR frames saved in each pcd file;
-  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+
