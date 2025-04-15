@@ -44,10 +44,78 @@ LIVMapper::LIVMapper(ros::NodeHandle &nh)
   initializeComponents();
   path.header.stamp = ros::Time::now();
   path.header.frame_id = "camera_init";
+  save_nerf_thread_ = new std::thread(&LIVMapper::SaveNerfData, this);
 }
 
-LIVMapper::~LIVMapper() {}
+LIVMapper::~LIVMapper() 
+{
+  ros::shutdown();
+  save_nerf_thread_->join();
+  delete save_nerf_thread_;
+}
+void LIVMapper::SaveNerfData()
+{
+  ros::Rate rate(20);
+  while (ros::ok())
+  {
+    rate.sleep();
+    NerfData data_cur;
+    {
+      std::unique_lock<std::shared_mutex> lock(data_mutex_);
+      if (AllCloudAndPose_.empty())
+        continue;
+      data_cur = AllCloudAndPose_.front();
+      AllCloudAndPose_.erase(AllCloudAndPose_.begin());
+    }
+    cv::resize(data_cur.image, data_cur.image, cv::Size(), scale_, scale_, cv::INTER_LINEAR);
+    std::ostringstream ss;
+    ss << std::setw(5) << std::setfill('0') << img_cnt_;
+    std::string cnt_str = ss.str();
+    std::string image_path = std::string(ROOT_DIR) + "Log/Colmap/images/" + cnt_str + ".png";
 
+    cv::Mat cvK = (cv::Mat_<float>(3, 3) << cam_fx_ * scale_, 0.0, cam_cx_ * scale_, 0.0, cam_fy_ * scale_,
+                    cam_cy_ * scale_, 0.0, 0.0, 1.0);
+    cv::Mat cvD = (cv::Mat_<float>(1, 4) << k1_, k2_, k3_, k4_);
+    cv::Mat undist_map1_(cam_width_ * scale_, cam_height_ * scale_, CV_16SC2);
+    cv::Mat undist_map2_(cam_width_ * scale_, cam_height_ * scale_, CV_16SC2);
+    if(cam_model_ == "Pinhole")
+    {
+      cv::initUndistortRectifyMap(cvK, cvD, cv::Mat_<double>::eye(3,3), cvK,
+                            cv::Size(cam_width_ * scale_, cam_height_ * scale_), CV_16SC2, undist_map1_, undist_map2_);
+    }
+    else if(cam_model_ == "EquidistantCamera")
+    {
+      cv::fisheye::initUndistortRectifyMap(cvK, cvD, cv::Mat_<double>::eye(3, 3), cvK,
+                                          cv::Size(cam_width_ * scale_, cam_height_ * scale_), CV_16SC2, undist_map1_,
+                                          undist_map2_);
+    }
+
+    cv::Mat rectified;
+    cv::remap(data_cur.image, rectified, undist_map1_, undist_map2_, cv::INTER_LINEAR);
+    cv::imwrite(image_path, rectified);
+    // T_w^c = T_w^b * T_b^c
+    Eigen::Isometry3d T_w_c = data_cur.pose * T_c_b_.inverse();
+    for (int i = 0; i < 4; i++)
+    {
+      for (int j = 0; j < 4; j++)
+      {
+        fout_nerf_color_ << T_w_c.matrix()(i, j) << " ";
+      }
+      fout_nerf_color_ << "\n";
+    }
+    for (int i = 0; i < 4; i++)
+    {
+      for (int j = 0; j < 4; j++)
+      {
+        fout_nerf_depth_ << data_cur.pose.matrix()(i, j) << " ";
+      }
+      fout_nerf_depth_ << "\n";
+    }
+    std::string filename = std::string(ROOT_DIR) + "Log/Colmap/depths/" + cnt_str + ".ply";
+    pcl::io::savePLYFile(filename, *data_cur.cloud);
+    img_cnt_++;
+  }
+}
 void LIVMapper::readParameters(ros::NodeHandle &nh)
 {
   nh.param<string>("common/lid_topic", lid_topic, "/livox/lidar");
@@ -109,6 +177,22 @@ void LIVMapper::readParameters(ros::NodeHandle &nh)
   nh.param<bool>("publish/dense_map_en", dense_map_en, false);
 
   p_pre->blind_sqr = p_pre->blind * p_pre->blind;
+  nh.param<std::string>("laserMapping/cam_model", cam_model_, "EquidistantCamera");
+  nh.param<int>("laserMapping/cam_width", cam_width_, 1920);
+  nh.param<int>("laserMapping/cam_height", cam_height_, 1080);
+  nh.param<double>("laserMapping/scale", scale_, 0.5);
+  nh.param<double>("laserMapping/cam_fx", cam_fx_, 0.5);
+  nh.param<double>("laserMapping/cam_fy", cam_fy_, 0.5);
+  nh.param<double>("laserMapping/cam_cx", cam_cx_, 0.5);
+  nh.param<double>("laserMapping/cam_cy", cam_cy_, 0.5);
+  nh.param<double>("laserMapping/k1", k1_, 0.5);
+  nh.param<double>("laserMapping/k2", k2_, 0.5);
+  nh.param<double>("laserMapping/k3", k3_, 0.5);
+  nh.param<double>("laserMapping/k4", k4_, 0.5);
+  Rcl_ << MAT_FROM_ARRAY(cameraextrinR);
+  Pcl_ << VEC_FROM_ARRAY(cameraextrinT);
+  T_c_b_.linear() = Rcl_;
+  T_c_b_.translation() = Pcl_;
 }
 
 void LIVMapper::initializeComponents() 
@@ -159,28 +243,29 @@ void LIVMapper::initializeComponents()
 
 void LIVMapper::initializeFiles() 
 {
-  if (pcd_save_en && colmap_output_en)
-  {
-      const std::string folderPath = std::string(ROOT_DIR) + "/scripts/colmap_output.sh";
-      
-      std::string chmodCommand = "chmod +x " + folderPath;
-      
-      int chmodRet = system(chmodCommand.c_str());  
-      if (chmodRet != 0) {
-          std::cerr << "Failed to set execute permissions for the script." << std::endl;
-          return;
-      }
 
-      int executionRet = system(folderPath.c_str());
-      if (executionRet != 0) {
-          std::cerr << "Failed to execute the script." << std::endl;
-          return;
-      }
+  const std::string folderPath = std::string(ROOT_DIR) + "/scripts/colmap_output.sh";
+  
+  std::string chmodCommand = "chmod +x " + folderPath;
+  
+  int chmodRet = system(chmodCommand.c_str());  
+  if (chmodRet != 0) {
+      std::cerr << "Failed to set execute permissions for the script." << std::endl;
+      return;
   }
+
+  int executionRet = system(folderPath.c_str());
+  if (executionRet != 0) {
+      std::cerr << "Failed to execute the script." << std::endl;
+      return;
+  }
+
   if(colmap_output_en) fout_points.open(std::string(ROOT_DIR) + "Log/Colmap/sparse/0/points3D.txt", std::ios::out);
   if(pcd_save_interval > 0) fout_pcd_pos.open(std::string(ROOT_DIR) + "Log/PCD/scans_pos.json", std::ios::out);
   fout_pre.open(DEBUG_FILE_DIR("mat_pre.txt"), std::ios::out);
   fout_out.open(DEBUG_FILE_DIR("mat_out.txt"), std::ios::out);
+  fout_nerf_color_.open(DEBUG_FILE_DIR("Colmap/color_poses.txt"), std::ios::out);
+  fout_nerf_depth_.open(DEBUG_FILE_DIR("Colmap/depth_poses.txt"), std::ios::out);
 }
 
 void LIVMapper::initializeSubscribersAndPublishers(ros::NodeHandle &nh, image_transport::ImageTransport &it) 
@@ -421,7 +506,16 @@ void LIVMapper::handleLIO()
   euler_cur = RotMtoEuler(_state.rot_end);
   geoQuat = tf::createQuaternionMsgFromRollPitchYaw(euler_cur(0), euler_cur(1), euler_cur(2));
   publish_odometry(pubOdomAftMapped);
-
+  /**********************************************************/
+  Eigen::Isometry3d T_w_b = Eigen::Isometry3d::Identity();
+  T_w_b.translation() = _state.pos_end;
+  T_w_b.linear() = _state.rot_end;
+  if(!img_cur_data_.empty()){
+    std::unique_lock<std::shared_mutex> lock(data_mutex_);
+    cv::Mat image = img_cur_data_.clone();
+    AllCloudAndPose_.push_back(NerfData(pcl_l_wait_pub, T_w_b, image));
+  }
+  /**********************************************************/
   double t3 = omp_get_wtime();
 
   PointCloudXYZI::Ptr world_lidar(new PointCloudXYZI());
@@ -725,11 +819,11 @@ void LIVMapper::standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
   sig_buffer.notify_all();
 }
 
-void LIVMapper::livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg_in)
+void LIVMapper::livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg_in)
 {
   if (!lidar_en) return;
   mtx_buffer.lock();
-  livox_ros_driver::CustomMsg::Ptr msg(new livox_ros_driver::CustomMsg(*msg_in));
+  livox_ros_driver2::CustomMsg::Ptr msg(new livox_ros_driver2::CustomMsg(*msg_in));
   // if ((abs(msg->header.stamp.toSec() - last_timestamp_lidar) > 0.2 && last_timestamp_lidar > 0) || sync_jump_flag)
   // {
   //   ROS_WARN("lidar jumps %.3f\n", msg->header.stamp.toSec() - last_timestamp_lidar);

@@ -74,9 +74,9 @@ cd catkin_ws/src
 git clone https://github.com/xuankuzcr/rpg_vikit.git 
 ```
 
-### 2.5 **livox_ros_driver**
+### 2.5 **livox_ros_driver2**
 
-Follow [livox_ros_driver Installation](https://github.com/Livox-SDK/livox_ros_driver).
+Follow [livox_ros_driver2 Installation](https://github.com/Livox-SDK/livox_ros_driver2).
 
 ## 3. Build
 

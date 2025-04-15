@@ -20,7 +20,20 @@ which is included as part of this source code package.
 #include <image_transport/image_transport.h>
 #include <nav_msgs/Path.h>
 #include <vikit/camera_loader.h>
-
+#include <shared_mutex>
+#include <pcl/io/ply_io.h>
+struct NerfData {
+  PointCloudXYZI::Ptr cloud;
+  Eigen::Isometry3d pose;
+  cv::Mat image;
+  NerfData()
+  {
+    cloud.reset(new PointCloudXYZI());
+    pose  = Eigen::Isometry3d::Identity();
+  }
+  NerfData(PointCloudXYZI::Ptr c, const Eigen::Isometry3d& p, cv::Mat img)
+      : cloud(c), pose(p),image(img) {}
+};
 class LIVMapper
 {
 public:
@@ -43,10 +56,10 @@ public:
   void imu_prop_callback(const ros::TimerEvent &e);
   void transformLidar(const Eigen::Matrix3d rot, const Eigen::Vector3d t, const PointCloudXYZI::Ptr &input_cloud, PointCloudXYZI::Ptr &trans_cloud);
   void pointBodyToWorld(const PointType &pi, PointType &po);
- 
+  void SaveNerfData();
   void RGBpointBodyToWorld(PointType const *const pi, PointType *const po);
   void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg);
-  void livox_pcl_cbk(const livox_ros_driver::CustomMsg::ConstPtr &msg_in);
+  void livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg_in);
   void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in);
   void img_cbk(const sensor_msgs::ImageConstPtr &msg_in);
   void publish_img_rgb(const image_transport::Publisher &pubImage, VIOManagerPtr vio_manager);
@@ -182,5 +195,18 @@ public:
   double aver_time_icp = 0;
   double aver_time_map_inre = 0;
   bool colmap_output_en = false;
+
+  std::thread* save_nerf_thread_;
+  mutable std::shared_mutex data_mutex_;
+  std::vector<NerfData> AllCloudAndPose_;
+  Eigen::Isometry3d T_c_b_ = Eigen::Isometry3d::Identity();
+  Eigen::Matrix3d Rcl_;
+  Eigen::Vector3d Pcl_;  
+  ofstream fout_nerf_color_, fout_nerf_depth_;
+  int cam_width_,cam_height_;
+  double scale_,cam_fx_,cam_fy_,cam_cx_,cam_cy_,k1_,k2_,k3_,k4_;
+  std::string cam_model_;
+  int img_cnt_ = 1;
+  cv::Mat img_cur_data_;
 };
 #endif
