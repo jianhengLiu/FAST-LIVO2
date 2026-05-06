@@ -109,6 +109,7 @@ public:
   bool dense_map_en = false;
   int img_en = 1, imu_int_frame = 3;
   bool normal_en = true;
+  bool vio_en = true;
   bool exposure_estimate_en = false;
   double exposure_time_init = 0.0;
   bool inverse_composition_en = false;

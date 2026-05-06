@@ -57,6 +57,7 @@ void LIVMapper::readParameters(ros::NodeHandle &nh)
   nh.param<int>("common/lidar_en", lidar_en, 1);
   nh.param<string>("common/img_topic", img_topic, "/left_camera/image");
 
+  nh.param<bool>("vio/vio_en", vio_en, true);
   nh.param<bool>("vio/normal_en", normal_en, true);
   nh.param<bool>("vio/inverse_composition_en", inverse_composition_en, false);
   nh.param<int>("vio/max_iterations", max_iterations, 5);
@@ -137,6 +138,7 @@ void LIVMapper::initializeComponents()
   vio_manager->state_propagat = &state_propagat;
   vio_manager->max_iterations = max_iterations;
   vio_manager->img_point_cov = IMG_POINT_COV;
+  vio_manager->vio_en = vio_en;
   vio_manager->normal_en = normal_en;
   vio_manager->inverse_composition_en = inverse_composition_en;
   vio_manager->raycast_en = raycast_en;

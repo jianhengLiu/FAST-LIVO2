@@ -783,6 +783,8 @@ void VIOManager::retrieveFromVisualSparseMap(cv::Mat img, vector<pointWithVar> &
 
 void VIOManager::computeJacobianAndUpdateEKF(cv::Mat img)
 {
+  if (!vio_en) return;
+
   if (total_points == 0) return;
   
   compute_jacobian_time = update_ekf_time = 0.0;

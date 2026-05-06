@@ -44,6 +44,7 @@ preprocess:
   scan_line: 128
   blind: 0.3
 vio:
+  vio_en: false
   max_iterations: 5
   outlier_threshold: 1000 # 78 100 156 #100 200 500 700 infinite
   img_point_cov: 100 # 100 1000 
