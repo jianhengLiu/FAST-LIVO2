@@ -85,6 +85,10 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
     robosense_handler(msg);
     break;
 
+  case JT128:
+    jt128_handler(msg);
+    break;
+
   default:
     printf("Error LiDAR Type: %d \n", lidar_type);
     break;
@@ -1123,4 +1127,37 @@ bool Preprocess::edge_jump_judge(const PointCloudXYZI &pl, vector<orgtype> &type
   if (d1 > edgea * d2 || (d1 - d2) > edgeb) { return false; }
 
   return true;
+}
+
+void Preprocess::jt128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+{
+    pl_surf.clear();
+    // cloud_full_.clear();
+    pcl::PointCloud<robosense_ros::Point> pl_orig;
+    pcl::fromROSMsg(*msg, pl_orig);
+    int plsize = pl_orig.size();
+    pl_surf.reserve(plsize);
+    double base_time = msg->header.stamp.toSec();
+    cout << "Last Stamp: " << pl_orig.points.back().timestamp << endl;
+    for (int i = 0; i < pl_orig.points.size(); i++) {
+        if (i % point_filter_num != 0) continue;
+
+        double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y +
+                       pl_orig.points[i].z * pl_orig.points[i].z;
+
+        if (range < blind_sqr) continue;
+
+        Eigen::Vector3d pt_vec;
+        PointType added_pt;
+        added_pt.x = pl_orig.points[i].x;
+        added_pt.y = pl_orig.points[i].y;
+        added_pt.z = pl_orig.points[i].z;
+        added_pt.intensity = pl_orig.points[i].intensity;
+        added_pt.normal_x = 0;
+        added_pt.normal_y = 0;
+        added_pt.normal_z = 0;
+        added_pt.curvature = (pl_orig.points[i].timestamp - base_time) * 1000;  // curvature unit: ms
+
+        pl_surf.points.push_back(added_pt);
+    }
 }

@@ -147,6 +147,24 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(robosense_ros::Point,
                                   (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, timestamp, timestamp)(std::uint16_t, ring, ring))
 /*****************/
 
+/*** Hesai_JT128 ***/
+// Field order: x(0), y(4), z(8), intensity(12, float), ring(16, uint16), timestamp(18, double)
+// point_step = 26 bytes
+namespace jt128_ros
+{
+struct EIGEN_ALIGN16 Point
+{
+  PCL_ADD_POINT4D;           // x, y, z + padding (16 bytes with alignment, but actual data is 12)
+  float intensity;            // offset 12, 4 bytes
+  std::uint16_t ring;         // offset 16, 2 bytes  
+  double timestamp;           // offset 18, 8 bytes
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+} // namespace jt128_ros
+POINT_CLOUD_REGISTER_POINT_STRUCT(jt128_ros::Point,
+                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(std::uint16_t, ring, ring)(double, timestamp, timestamp))
+/*****************/
+
 class Preprocess
 {
 public:
@@ -176,6 +194,7 @@ private:
   void xt32_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void Pandar128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void robosense_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
+  void jt128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void l515_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void give_feature(PointCloudXYZI &pl, vector<orgtype> &types);
   void pub_func(PointCloudXYZI &pl, const ros::Time &ct);
